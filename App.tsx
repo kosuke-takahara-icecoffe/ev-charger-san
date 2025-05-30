@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { EVInstance, GameState, ScoreEntry } from './types';
 import {
@@ -104,26 +105,32 @@ export function App(): JSX.Element {
 
   const fetchHighScores = useCallback(async () => {
     if (!supabase) {
-      setHighScoresError("ランキング機能は現在利用できません。");
+      // This message is shown if supabase client failed to initialize (likely missing env vars)
+      setHighScoresError("ランキング機能は現在利用できません。クライアント設定を確認してください。");
       setHighScoresLoading(false);
       return;
     }
     setHighScoresLoading(true);
     setHighScoresError(null);
     try {
-      const { data, error } = await supabase
+      const { data, error, status } = await supabase
         .from('high_scores')
         .select('name, score')
         .order('score', { ascending: false })
         .limit(MAX_HIGH_SCORES);
 
       if (error) {
-        throw error;
+        console.error(`ハイスコアの読み込みエラー (ステータス: ${status}):`, error);
+        throw error; // Rethrow to be caught by the catch block
       }
       setHighScores(data || []);
     } catch (err: any) {
-      console.error("ハイスコアの読み込みに失敗しました:", err);
-      setHighScoresError("スコアの読み込みに失敗しました。時間をおいて再度お試しください。");
+      let detailedMessage = "スコアの読み込みに失敗しました。";
+      if (err && err.message) {
+        detailedMessage += ` (エラー: ${err.message})`;
+      }
+      console.error("キャッチされたハイスコア読み込みエラー:", err);
+      setHighScoresError(detailedMessage + " ネットワーク接続またはSupabaseの設定を確認してください。");
       setHighScores([]);
     } finally {
       setHighScoresLoading(false);
@@ -131,7 +138,6 @@ export function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    // アプリケーション初期ロード時にハイスコアを取得
     fetchHighScores();
   }, [fetchHighScores]);
 
@@ -199,21 +205,18 @@ export function App(): JSX.Element {
           .insert([{ name: playerNameRef.current || "名無し", score: finalScore }]);
         
         if (error) {
-          console.error("スコアの保存に失敗しました:", error);
-          // UIにエラー表示をしても良い
+          console.error("スコアの保存に失敗しました (Supabaseエラー):", error);
+          setHighScoresError(`スコアの保存に失敗しました: ${error.message}`);
         } else {
-          // 保存成功後、ハイスコアリストを再取得
           await fetchHighScores();
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("スコア保存中に予期せぬエラー:", err);
+        setHighScoresError(`スコア保存中にエラーが発生しました: ${err.message || '不明なエラー'}`);
       }
     } else {
-       // Supabaseが利用できない場合、ローカルのハイスコアロジックをフォールバックとして残すことも可能
-       // 今回はSupabaseが利用できない場合はエラーメッセージのみとする
        console.warn("Supabaseクライアントが利用できないため、スコアは保存されません。");
        setHighScoresError("ランキング機能は現在利用できません。スコアは保存されませんでした。");
-       // ローカルでのフォールバック処理 (オプション)
         setHighScores(prevHighScores => {
           const newScoreEntry: ScoreEntry = { name: playerNameRef.current || "名無し", score: finalScore };
           const updatedScores = [...prevHighScores, newScoreEntry];
@@ -221,7 +224,6 @@ export function App(): JSX.Element {
           return updatedScores.slice(0, MAX_HIGH_SCORES);
         });
     }
-
 
     clearAllIntervals();
     playGameOverSound();
@@ -266,14 +268,18 @@ export function App(): JSX.Element {
     playStartSound();
     resetGame();
     setGameState(GameState.Playing);
-  }, [resetGame, playStartSound, playerName]);
+    // Reset high score error from previous game over screen if any
+    setHighScoresError(null); 
+    // Fetch high scores again in case they were updated by another player or if there was an error previously
+    fetchHighScores();
+  }, [resetGame, playStartSound, playerName, fetchHighScores]);
   
   useEffect(() => {
     if (gameState === GameState.Playing || gameState === GameState.Bonus || gameState === GameState.PenaltyCoolDown || isRapidChargingRef.current) {
       mainTimerIntervalRef.current = window.setInterval(() => {
         setTimeLeft(prevTimeLeft => {
           if (prevTimeLeft <= 1) {
-            endGame(); // endGame is now async, but this effect doesn't await it. This is generally fine.
+            endGame(); 
             return 0;
           }
           const newTimeLeft = prevTimeLeft - 1;
@@ -637,7 +643,7 @@ export function App(): JSX.Element {
         <div className="mt-8 pt-6 border-t border-slate-700">
             <h3 className="text-2xl font-semibold mb-4 text-sky-400">ハイスコア</h3>
             {highScoresLoading && <p className="text-slate-300">スコアを読み込み中...</p>}
-            {highScoresError && <p className="text-red-400">{highScoresError}</p>}
+            {highScoresError && <p className="text-red-400 px-2 py-1 bg-red-900/50 rounded">{highScoresError}</p>}
             {!highScoresLoading && !highScoresError && highScores.length === 0 && <p className="text-slate-400">まだハイスコアはありません。</p>}
             {!highScoresLoading && !highScoresError && highScores.length > 0 && (
                 <ul className="space-y-2 text-left">
@@ -657,7 +663,7 @@ export function App(): JSX.Element {
         <div className="mb-6 pt-6 border-t border-slate-700">
             <h3 className="text-2xl font-semibold mb-4 text-sky-400">ハイスコアランキング</h3>
             {highScoresLoading && <p className="text-slate-300">ランキングを読み込み中...</p>}
-            {highScoresError && <p className="text-red-400">{highScoresError}</p>}
+            {highScoresError && <p className="text-red-400 px-2 py-1 bg-red-900/50 rounded">{highScoresError}</p>}
             {!highScoresLoading && !highScoresError && highScores.length === 0 && <p className="text-slate-400">まだランキングはありません。</p>}
             {!highScoresLoading && !highScoresError && highScores.length > 0 && (
                 <ul className="space-y-2 text-left">
@@ -673,8 +679,7 @@ export function App(): JSX.Element {
         <button
           onClick={() => {
             setGameState(GameState.Idle);
-            // Player name persists. High scores will be re-fetched or already up-to-date.
-            fetchHighScores(); // Re-fetch scores when returning to Idle.
+            fetchHighScores(); 
           }}
           className="w-full text-xl sm:text-2xl font-bold py-3 px-6 bg-sky-600 hover:bg-sky-500 text-white rounded-lg shadow-lg transition-all duration-150 ease-in-out transform hover:scale-105"
           aria-label="タイトル画面に戻る"
@@ -768,3 +773,4 @@ export function App(): JSX.Element {
     </div>
   );
 }
+    
