@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface DemandForecastGraphProps {
@@ -20,7 +21,7 @@ const DemandForecastGraph: React.FC<DemandForecastGraphProps> = ({
   height = 100, 
 }) => {
   if (!forecastData || forecastData.length === 0) {
-    return <div className="text-slate-400">Loading demand forecast...</div>;
+    return <div className="text-slate-400">需要予測を読み込み中...</div>;
   }
 
   const padding = { top: 10, right: 10, bottom: 20, left: 35 };
@@ -46,16 +47,16 @@ const DemandForecastGraph: React.FC<DemandForecastGraphProps> = ({
 
   return (
     <div className="bg-slate-700 p-3 sm:p-4 rounded-lg shadow-md">
-      <h4 className="text-sm font-semibold text-slate-300 mb-2">Facility Demand Forecast (Next 60s)</h4>
+      <h4 className="text-sm font-semibold text-slate-300 mb-2">施設需要予測 (今後60秒)</h4>
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} aria-labelledby="demand-graph-title" role="img">
-        <title id="demand-graph-title">Line graph showing forecasted facility power demand, contract power limit, current facility demand, and total load including charger output over the next 60 seconds.</title>
+        <title id="demand-graph-title">今後60秒間の施設電力需要予測、契約電力上限、現在の施設需要、および充電器出力を含む総負荷を示す折れ線グラフ。</title>
         
         {/* Y-Axis Labels */}
         <text x={padding.left - 8} y={padding.top + 5} textAnchor="end" fontSize="10" fill="#a0aec0">{maxGraphValue.toFixed(0)}kW</text>
         <text x={padding.left - 8} y={getY(maxGraphValue / 2) + 3} textAnchor="end" fontSize="10" fill="#a0aec0">{(maxGraphValue / 2).toFixed(0)}kW</text>
         <text x={padding.left - 8} y={getY(0) -2} textAnchor="end" fontSize="10" fill="#a0aec0">0kW</text>
         {contractPowerY < (padding.top + chartHeight - 5) && contractPowerY > (padding.top + 5) && (
-            <text x={padding.left - 8} y={contractPowerY +3} textAnchor="end" fontSize="9" fill="#e53e3e" fontWeight="bold">{contractPower}kW CP</text>
+            <text x={padding.left - 8} y={contractPowerY +3} textAnchor="end" fontSize="9" fill="#e53e3e" fontWeight="bold">{contractPower}kW 契約</text>
         )}
 
         {/* X-Axis Line */}
@@ -70,7 +71,7 @@ const DemandForecastGraph: React.FC<DemandForecastGraphProps> = ({
           stroke="#e53e3e" // Red for contract power
           strokeWidth="1.5"
           strokeDasharray="5 3"
-          aria-label={`Contract Power Limit: ${contractPower} kW`}
+          aria-label={`契約電力上限: ${contractPower} kW`}
         />
 
         {/* Forecast Line */}
@@ -102,7 +103,7 @@ const DemandForecastGraph: React.FC<DemandForecastGraphProps> = ({
                 fill="#f6e05e"
                 stroke="#1a202c"
                 strokeWidth="1.5"
-                aria-label={`Current Facility Demand: ${currentActualDemand.toFixed(1)} kW`}
+                aria-label={`現在の施設需要: ${currentActualDemand.toFixed(1)} kW`}
             />
           </>
         )}
@@ -116,7 +117,7 @@ const DemandForecastGraph: React.FC<DemandForecastGraphProps> = ({
             fill="#48BB78" // Green
             stroke="#1a202c"
             strokeWidth="1.5"
-            aria-label={`Total Load (Demand + Charger): ${(currentActualDemand + currentChargerOutput).toFixed(1)} kW (Charger component: ${currentChargerOutput.toFixed(1)} kW)`}
+            aria-label={`総負荷 (需要 + 充電器): ${(currentActualDemand + currentChargerOutput).toFixed(1)} kW (充電器分: ${currentChargerOutput.toFixed(1)} kW)`}
           />
         )}
       </svg>

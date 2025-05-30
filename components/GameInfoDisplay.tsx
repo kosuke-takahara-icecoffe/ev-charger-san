@@ -1,3 +1,4 @@
+
 import React from 'react';
 import TimerIcon from './icons/TimerIcon';
 import StarIcon from './icons/StarIcon';
@@ -24,16 +25,16 @@ const GameInfoDisplay: React.FC<GameInfoDisplayProps> = ({ playerName, score, ti
       )}
       <div className="bg-slate-700 p-3 sm:p-4 rounded-lg shadow-md flex items-center justify-center sm:justify-start col-span-1 md:col-span-1">
         <StarIcon className="w-6 h-6 sm:w-7 sm:h-7 mr-2 text-amber-400" filled />
-        <span className="font-semibold whitespace-nowrap">Score: {score.toFixed(1)} kWh</span>
+        <span className="font-semibold whitespace-nowrap">スコア: {score.toFixed(1)} kWh</span>
       </div>
       <div className="bg-slate-700 p-3 sm:p-4 rounded-lg shadow-md flex items-center justify-center sm:justify-start col-span-1 md:col-span-1">
         <TimerIcon className="w-6 h-6 sm:w-7 sm:h-7 mr-2 text-cyan-400" />
-        <span className="font-semibold whitespace-nowrap">Time: {timeLeft}s</span>
+        <span className="font-semibold whitespace-nowrap">時間: {timeLeft}s</span>
       </div>
       <div className={`bg-slate-700 p-3 sm:p-4 rounded-lg shadow-md flex items-center justify-center sm:justify-start col-span-1 md:col-span-1 ${playerName ? '' : 'col-span-2 md:col-span-1'}`}>
          <StarIcon className={`w-6 h-6 sm:w-7 sm:h-7 mr-2 ${bonusTimeActive ? 'text-yellow-400 animate-pulse' : 'text-slate-500'}`} filled={bonusTimeActive}/>
         <span className="font-semibold whitespace-nowrap">
-          Bonus: {bonusTimeActive ? 'ACTIVE!' : `${consecutiveCharges}/${chargesForBonus}`}
+          ボーナス: {bonusTimeActive ? '作動中！' : `${consecutiveCharges}/${chargesForBonus}`}
         </span>
       </div>
     </div>

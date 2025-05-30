@@ -1,6 +1,7 @@
+
 {
   "name": "EV Charger-san",
-  "description": "A game where the player manages an EV charging station, charging various EVs while balancing power demand. Score points by charging kWhs within the time limit, and unlock bonus rapid charging rounds.",
+  "description": "プレイヤーがEV充電ステーションを管理し、さまざまなEVを充電しながら電力需要のバランスを取るゲームです。制限時間内にkWhを充電してポイントを獲得し、ボーナスの急速充電ラウンドをアンロックしましょう。",
   "requestFramePermissions": [],
   "prompt": ""
 }

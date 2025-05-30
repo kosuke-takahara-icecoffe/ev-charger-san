@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { EVInstance, GameState, ScoreEntry } from './types';
 import {
@@ -24,8 +23,10 @@ import GameInfoDisplay from './components/GameInfoDisplay';
 import FacilityStatusDisplay from './components/FacilityStatusDisplay';
 import Modal from './components/Modal';
 import ZapIcon from './components/icons/ZapIcon';
-import UserIcon from './components/icons/UserIcon'; // Added UserIcon
+import UserIcon from './components/icons/UserIcon';
 import DemandForecastGraph from './components/DemandForecastGraph';
+import { useSound } from './components/hooks/useSound';
+import { supabase } from './supabaseClient'; // Supabaseクライアントをインポート
 
 const getRandomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getRandomFloat = (min: number, max: number) => Math.random() * (max - min) + min;
@@ -54,11 +55,13 @@ export function App(): JSX.Element {
   const [rapidChargeTimeLeft, setRapidChargeTimeLeft] = useState(RAPID_CHARGE_DURATION);
   const [hasActivatedRapidChargeThisGame, setHasActivatedRapidChargeThisGame] = useState(false);
 
-  const [message, setMessage] = useState("Welcome to EV Charger-san!");
+  const [message, setMessage] = useState("EVチャージャーさんへようこそ！");
 
-  // Player Name and High Scores
   const [playerName, setPlayerName] = useState("");
   const [highScores, setHighScores] = useState<ScoreEntry[]>([]);
+  const [highScoresLoading, setHighScoresLoading] = useState<boolean>(true);
+  const [highScoresError, setHighScoresError] = useState<string | null>(null);
+
 
   const gameTickIntervalRef = useRef<number | null>(null);
   const mainTimerIntervalRef = useRef<number | null>(null);
@@ -67,7 +70,7 @@ export function App(): JSX.Element {
   const rapidChargeTimerIntervalRef = useRef<number | null>(null);
 
   const scoreRef = useRef(score);
-  const gameStateRef = useRef(gameState);
+  const gameStateRef = useRef<GameState>(gameState);
   const bonusTimeActiveRef = useRef(bonusTimeActive);
   const isRapidChargingRef = useRef(isRapidCharging);
   const currentEVRef = useRef(currentEV);
@@ -75,17 +78,13 @@ export function App(): JSX.Element {
   const rapidChargeTimeLeftRef = useRef(rapidChargeTimeLeft);
   const playerNameRef = useRef(playerName);
 
-
-  const playStartSound = useCallback(() => {/* NOOP */}, []);
-  const stopChargeNormalLoopSound = useCallback(() => {/* NOOP */}, []);
-  const playChargeNormalLoopSound = useCallback((loop?: boolean) => {/* NOOP */}, []); 
-  const stopChargeRapidLoopSound = useCallback(() => {/* NOOP */}, []);
-  const playChargeRapidLoopSound = useCallback((loop?: boolean) => {/* NOOP */}, []); 
-  const stopChargeBonusLoopSound = useCallback(() => {/* NOOP */}, []);
-  const playChargeBonusLoopSound = useCallback((loop?: boolean) => {/* NOOP */}, []); 
-  const playChargeStopSound = useCallback(() => {/* NOOP */}, []);
-  const playBonusStartSound = useCallback(() => {/* NOOP */}, []);
-  const playGameOverSound = useCallback(() => {/* NOOP */}, []);
+  const { play: playStartSound } = useSound('./sounds/game_start.mp3');
+  const { play: playChargeNormalLoopSound, stop: stopChargeNormalLoopSound } = useSound('./sounds/charging_normal_loop.mp3');
+  const { play: playChargeRapidLoopSound, stop: stopChargeRapidLoopSound } = useSound('./sounds/charging_rapid_loop.mp3');
+  const { play: playChargeBonusLoopSound, stop: stopChargeBonusLoopSound } = useSound('./sounds/charging_bonus_loop.mp3');
+  const { play: playChargeStopSound } = useSound('./sounds/charge_stop.mp3');
+  const { play: playBonusStartSound } = useSound('./sounds/bonus_start.mp3');
+  const { play: playGameOverSound } = useSound('./sounds/game_over.mp3');
   
   const stopAllLoopingSoundsAndPlayStop = useCallback((playStopSnd = true) => {
     stopChargeNormalLoopSound();
@@ -93,7 +92,6 @@ export function App(): JSX.Element {
     stopChargeRapidLoopSound();
     if (playStopSnd) playChargeStopSound();
    }, [stopChargeNormalLoopSound, stopChargeBonusLoopSound, stopChargeRapidLoopSound, playChargeStopSound]);
-
 
   useEffect(() => { scoreRef.current = score; }, [score]);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
@@ -103,6 +101,39 @@ export function App(): JSX.Element {
   useEffect(() => { facilityDemandRef.current = facilityDemand; }, [facilityDemand]);
   useEffect(() => { rapidChargeTimeLeftRef.current = rapidChargeTimeLeft; }, [rapidChargeTimeLeft]);
   useEffect(() => { playerNameRef.current = playerName; }, [playerName]);
+
+  const fetchHighScores = useCallback(async () => {
+    if (!supabase) {
+      setHighScoresError("ランキング機能は現在利用できません。");
+      setHighScoresLoading(false);
+      return;
+    }
+    setHighScoresLoading(true);
+    setHighScoresError(null);
+    try {
+      const { data, error } = await supabase
+        .from('high_scores')
+        .select('name, score')
+        .order('score', { ascending: false })
+        .limit(MAX_HIGH_SCORES);
+
+      if (error) {
+        throw error;
+      }
+      setHighScores(data || []);
+    } catch (err: any) {
+      console.error("ハイスコアの読み込みに失敗しました:", err);
+      setHighScoresError("スコアの読み込みに失敗しました。時間をおいて再度お試しください。");
+      setHighScores([]);
+    } finally {
+      setHighScoresLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // アプリケーション初期ロード時にハイスコアを取得
+    fetchHighScores();
+  }, [fetchHighScores]);
 
 
   const clearAllIntervals = useCallback(() => {
@@ -136,7 +167,7 @@ export function App(): JSX.Element {
   
   useEffect(() => {
     let targetChargerOutput = 0;
-    if (gameStateRef.current === GameState.PenaltyCoolDown || penaltyTimeLeft > 0) { // Use ref here for consistency if penaltyTimeLeft is also tied to state
+    if (gameStateRef.current === GameState.PenaltyCoolDown || penaltyTimeLeft > 0) {
       targetChargerOutput = 0;
     } else if (isRapidChargingRef.current) { 
       targetChargerOutput = RAPID_CHARGER_OUTPUT;
@@ -153,26 +184,49 @@ export function App(): JSX.Element {
   }, [gameState, penaltyTimeLeft, isRapidCharging, isCharging, bonusTimeActive, baseNormalChargerOutput, currentBonusOutput]);
 
 
-  const endGame = useCallback(() => {
+  const endGame = useCallback(async () => {
     setGameState(GameState.GameOver);
     setIsCharging(false);
     setIsRapidCharging(false); 
     
     const finalScore = scoreRef.current;
-    setMessage(`Game Over, ${playerNameRef.current}! Final Score: ${finalScore.toFixed(1)} kWh`);
+    setMessage(`ゲームオーバー、${playerNameRef.current || "プレイヤー"}！最終スコア: ${finalScore.toFixed(1)} kWh`);
     
-    // Add to high scores
-    setHighScores(prevHighScores => {
-      const newScoreEntry: ScoreEntry = { name: playerNameRef.current, score: finalScore };
-      const updatedScores = [...prevHighScores, newScoreEntry];
-      updatedScores.sort((a, b) => b.score - a.score); // Sort descending
-      return updatedScores.slice(0, MAX_HIGH_SCORES); // Keep top N
-    });
+    if (supabase) {
+      try {
+        const { error } = await supabase
+          .from('high_scores')
+          .insert([{ name: playerNameRef.current || "名無し", score: finalScore }]);
+        
+        if (error) {
+          console.error("スコアの保存に失敗しました:", error);
+          // UIにエラー表示をしても良い
+        } else {
+          // 保存成功後、ハイスコアリストを再取得
+          await fetchHighScores();
+        }
+      } catch (err) {
+        console.error("スコア保存中に予期せぬエラー:", err);
+      }
+    } else {
+       // Supabaseが利用できない場合、ローカルのハイスコアロジックをフォールバックとして残すことも可能
+       // 今回はSupabaseが利用できない場合はエラーメッセージのみとする
+       console.warn("Supabaseクライアントが利用できないため、スコアは保存されません。");
+       setHighScoresError("ランキング機能は現在利用できません。スコアは保存されませんでした。");
+       // ローカルでのフォールバック処理 (オプション)
+        setHighScores(prevHighScores => {
+          const newScoreEntry: ScoreEntry = { name: playerNameRef.current || "名無し", score: finalScore };
+          const updatedScores = [...prevHighScores, newScoreEntry];
+          updatedScores.sort((a, b) => b.score - a.score);
+          return updatedScores.slice(0, MAX_HIGH_SCORES);
+        });
+    }
+
 
     clearAllIntervals();
     playGameOverSound();
     stopAllLoopingSoundsAndPlayStop(false);
-  }, [clearAllIntervals, playGameOverSound, stopAllLoopingSoundsAndPlayStop]);
+  }, [clearAllIntervals, playGameOverSound, stopAllLoopingSoundsAndPlayStop, fetchHighScores]);
 
   const generateDemandForecast = useCallback(() => {
     const forecast: number[] = new Array(DEMAND_FORECAST_POINTS).fill(0);
@@ -186,7 +240,6 @@ export function App(): JSX.Element {
   }, []);
 
   const resetGame = useCallback(() => {
-    // Player name is not reset here, it persists from Idle screen.
     setScore(0);
     setTimeLeft(INITIAL_GAME_DURATION);
     setBonusTimeActive(false);
@@ -202,12 +255,12 @@ export function App(): JSX.Element {
     setIsCharging(false); 
     generateDemandForecast();
     spawnNewEV();
-    setMessage("Click 'Start Charge' or 'Start Rapid Charge'.");
+    setMessage("「充電開始」または「急速充電開始」をクリックしてください。");
   }, [spawnNewEV, generateDemandForecast]);
 
   const startGame = useCallback(() => {
     if (playerName.trim() === "") {
-        setMessage("Please enter your name to start the game.");
+        setMessage("ゲームを開始するにはお名前を入力してください。");
         return;
     }
     playStartSound();
@@ -220,7 +273,7 @@ export function App(): JSX.Element {
       mainTimerIntervalRef.current = window.setInterval(() => {
         setTimeLeft(prevTimeLeft => {
           if (prevTimeLeft <= 1) {
-            endGame();
+            endGame(); // endGame is now async, but this effect doesn't await it. This is generally fine.
             return 0;
           }
           const newTimeLeft = prevTimeLeft - 1;
@@ -247,7 +300,7 @@ export function App(): JSX.Element {
         setPenaltyTimeLeft(prev => {
           if (prev <= 1) {
             setGameState(bonusTimeActiveRef.current ? GameState.Bonus : GameState.Playing); 
-            setMessage("Penalty over. You can charge again!");
+            setMessage("ペナルティ終了。再び充電できます！");
             return 0;
           }
           return prev - 1;
@@ -270,7 +323,7 @@ export function App(): JSX.Element {
              if (!isRapidChargingRef.current && gameStateRef.current !== GameState.PenaltyCoolDown) {
                 setGameState(GameState.Playing);
              }
-            setMessage("Bonus time over!");
+            setMessage("ボーナスタイム終了！");
             return 0;
           }
           return prev - 1;
@@ -292,7 +345,7 @@ export function App(): JSX.Element {
         setRapidChargeTimeLeft(prev => {
           if (prev <= 1) {
             setIsRapidCharging(false); 
-            setMessage("Rapid charge duration finished!");
+            setMessage("急速充電時間が終了しました！");
             stopChargeRapidLoopSound(); 
             playChargeStopSound();
 
@@ -342,7 +395,7 @@ export function App(): JSX.Element {
             setIsCharging(false); 
             if(isRapidChargingRef.current) setIsRapidCharging(false); 
             setConsecutiveSuccessfulCharges(0);
-            setMessage(`DEMAND EXCEEDED! Facility overload. Charging disabled for ${PENALTY_COOLDOWN_DURATION}s.`);
+            setMessage(`需要超過！施設過負荷。充電停止（${PENALTY_COOLDOWN_DURATION}秒）`);
             return;
           }
 
@@ -396,12 +449,12 @@ export function App(): JSX.Element {
                     setGameState(GameState.Bonus);
                   }
                   setTimeLeft(prevTime => prevTime + BONUS_DURATION); 
-                  setMessage("BONUS TIME! Enhanced charging active!");
+                  setMessage("ボーナスタイム！強化充電作動中！");
                   spawnNewEV(); 
                   return 0; 
                 }
                 
-                setMessage(`${chargedEVName} fully charged! (+${chargedCapacity.toFixed(0)} kWh) Next EV arriving.`);
+                setMessage(`${chargedEVName}が満充電です！ (+${chargedCapacity.toFixed(0)} kWh) 次のEVが到着します。`);
                 spawnNewEV(); 
                 return newCount; 
               });
@@ -411,24 +464,24 @@ export function App(): JSX.Element {
           });
 
           if (chargeAmount > 0) {
-             if (isRapidChargingRef.current) setMessage(`RAPID CHARGING at ${actualRateEVAccepts.toFixed(1)} kW!`);
-             else if (bonusTimeActiveRef.current) setMessage(`BONUS CHARGING at ${actualRateEVAccepts.toFixed(1)} kW!`);
-             else setMessage(`Charging at ${actualRateEVAccepts.toFixed(1)} kW...`);
+             if (isRapidChargingRef.current) setMessage(`急速充電中 ${actualRateEVAccepts.toFixed(1)} kW！`);
+             else if (bonusTimeActiveRef.current) setMessage(`ボーナス充電中 ${actualRateEVAccepts.toFixed(1)} kW！`);
+             else setMessage(`${actualRateEVAccepts.toFixed(1)} kWで充電中...`);
           } else if (intendedChargerOutput > 0) {
-             setMessage("EV at max input or no power from charger. Check demand!");
+             setMessage("EVが最大入力に達したか、充電器からの電力供給がありません。需要を確認してください！");
           } else { 
-             setMessage("Charger active but no power output. Check demand!");
+             setMessage("充電器は作動していますが、電力が出力されていません。需要を確認してください！");
           }
 
         } else { 
             if (gameStateRef.current === GameState.Playing) {
                  if (bonusTimeActiveRef.current) {
-                    setMessage("Bonus Time! Click 'Start Bonus Charge'!");
+                    setMessage("ボーナスタイム！「ボーナス充電開始」をクリック！");
                  } else {
-                    setMessage("Click 'Start Charge' or 'Start Rapid Charge'.");
+                    setMessage("「充電開始」または「急速充電開始」をクリックしてください。");
                  }
             } else if (gameStateRef.current === GameState.Bonus) {
-                 setMessage("Bonus Time! Click 'Start Bonus Charge'!");
+                 setMessage("ボーナスタイム！「ボーナス充電開始」をクリック！");
             }
         }
       }, GAME_TICK_INTERVAL);
@@ -441,14 +494,14 @@ export function App(): JSX.Element {
 
 
   const handleNormalChargeToggle = () => {
-    if (isRapidChargingRef.current || gameStateRef.current === GameState.PenaltyCoolDown) return;
+    if (isRapidChargingRef.current || (gameStateRef.current as GameState) === GameState.PenaltyCoolDown) return;
 
     if (isCharging) {
       setIsCharging(false);
       stopChargeNormalLoopSound(); 
       stopChargeBonusLoopSound();
       playChargeStopSound();
-      setMessage("Charging stopped.");
+      setMessage("充電を停止しました。");
     } else {
       if (gameState === GameState.Playing || gameState === GameState.Bonus) {
         setIsCharging(true);
@@ -462,11 +515,11 @@ export function App(): JSX.Element {
   };
 
   const handleRapidChargeButtonClick = () => {
-    if (gameStateRef.current === GameState.PenaltyCoolDown) return;
+    if ((gameStateRef.current as GameState) === GameState.PenaltyCoolDown) return;
 
     if (isRapidCharging) { 
       setIsRapidCharging(false);
-      setMessage(`Rapid charge paused. ${rapidChargeTimeLeftRef.current.toFixed(0)}s remaining.`);
+      setMessage(`急速充電を一時停止しました。残り${rapidChargeTimeLeftRef.current.toFixed(0)}秒です。`);
       stopChargeRapidLoopSound(); 
       playChargeStopSound();
       
@@ -479,7 +532,7 @@ export function App(): JSX.Element {
       }
     } else { 
       if (rapidChargeTimeLeft <= 0) { 
-        setMessage("Rapid charge fully used for this game.");
+        setMessage("このゲームでは急速充電を使い切りました。");
         return;
       }
 
@@ -490,37 +543,37 @@ export function App(): JSX.Element {
       setIsRapidCharging(true);
       setHasActivatedRapidChargeThisGame(true); 
       
-      setMessage(`Rapid Charge Activated! ${rapidChargeTimeLeftRef.current.toFixed(0)}s available.`);
+      setMessage(`急速充電作動！残り${rapidChargeTimeLeftRef.current.toFixed(0)}秒です。`);
       playChargeRapidLoopSound(true); 
       if (gameStateRef.current !== GameState.PenaltyCoolDown) {
-         setGameState(GameState.Bonus); // Set to Bonus to reflect active high-power charging state visually if desired
+         setGameState(GameState.Bonus); 
       }
     }
   };
   
   const mainButtonText = (): string => {
-    if (isRapidCharging) return "N/A (Rapid Active)";
+    if (isRapidCharging) return "N/A (急速充電中)";
     if (isCharging) {
-        if (effectiveEVChargeRate > 0) return bonusTimeActive ? "STOP BONUS" : "STOP CHARGE";
-        return "NO POWER";
+        if (effectiveEVChargeRate > 0) return bonusTimeActive ? "ボーナス停止" : "充電停止";
+        return "電力なし";
     }
-    return bonusTimeActive ? "START BONUS CHARGE" : "START CHARGE";
+    return bonusTimeActive ? "ボーナス充電開始" : "充電開始";
   };
 
   const mainButtonAriaLabel = (): string => {
-    if (isRapidCharging) return "Normal charge unavailable while rapid charging";
-    if (isCharging) return bonusTimeActive ? "Stop bonus charging" : "Stop normal charging";
-    return bonusTimeActive ? "Start bonus charging" : "Start normal charge";
+    if (isRapidCharging) return "急速充電中は通常充電は利用できません";
+    if (isCharging) return bonusTimeActive ? "ボーナス充電を停止" : "通常充電を停止";
+    return bonusTimeActive ? "ボーナス充電を開始" : "通常充電を開始";
   };
 
   const rapidChargeButtonText = (): string => {
-    if (isRapidCharging) return `Stop Rapid (${rapidChargeTimeLeft.toFixed(0)}s)`;
-    if (rapidChargeTimeLeft <= 0 && hasActivatedRapidChargeThisGame) return "Rapid Charge Used";
-    return `Start Rapid (${RAPID_CHARGER_OUTPUT}kW / ${rapidChargeTimeLeft.toFixed(0)}s left)`;
+    if (isRapidCharging) return `急速停止 (${rapidChargeTimeLeft.toFixed(0)}秒)`;
+    if (rapidChargeTimeLeft <= 0 && hasActivatedRapidChargeThisGame) return "急速充電使用済み";
+    return `急速開始 (${RAPID_CHARGER_OUTPUT}kW / 残り${rapidChargeTimeLeft.toFixed(0)}秒)`;
   };
   
   const isRapidChargeButtonDisabled = (): boolean => {
-    if (gameState === GameState.PenaltyCoolDown) return true; // Direct state check is fine here for UI logic
+    if (gameState === GameState.PenaltyCoolDown) return true; 
     return !isRapidCharging && rapidChargeTimeLeft <= 0 && hasActivatedRapidChargeThisGame;
   }
 
@@ -537,7 +590,7 @@ export function App(): JSX.Element {
   }, [stopAllLoopingSoundsAndPlayStop]);
 
   const mainChargeButtonBgColor = (): string => {
-    if (gameState === GameState.PenaltyCoolDown) return 'bg-red-700 cursor-not-allowed'; // Direct state check fine for UI
+    if (gameState === GameState.PenaltyCoolDown) return 'bg-red-700 cursor-not-allowed'; 
     if (isRapidCharging) return 'bg-slate-600 cursor-not-allowed'; 
     if (bonusTimeActive) return isCharging ? 'bg-yellow-400' : 'bg-yellow-600 hover:bg-yellow-500';
     return isCharging ? 'bg-sky-500' : 'bg-sky-700 hover:bg-sky-600';
@@ -550,136 +603,166 @@ export function App(): JSX.Element {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 selection:bg-sky-500 selection:text-sky-900">
-      <Modal isOpen={gameState === GameState.Idle} title="EV Charger-san">
-        <p className="text-slate-300 mb-4 text-lg">Charge EVs, manage power, and hit bonus rounds! Watch the facility demand and stay under contract power. Use your rapid charger wisely!</p>
+      <Modal isOpen={gameState === GameState.Idle} title="EVチャージャーさん">
+        <p className="text-slate-300 mb-4 text-lg">EVを充電し、電力需要を管理し、ボーナスラウンドを目指しましょう！施設の電力需要に注意し、契約電力を超えないようにしてください。急速充電器は賢く使いましょう！</p>
         
         <div className="mb-6">
-          <label htmlFor="playerName" className="block text-slate-300 text-sm font-bold mb-2">Enter Your Name:</label>
-          <input 
-            type="text"
-            id="playerName"
-            value={playerName}
-            onChange={handlePlayerNameChange}
-            className="shadow appearance-none border rounded w-full py-2 px-3 bg-slate-700 text-slate-100 leading-tight focus:outline-none focus:shadow-outline focus:border-sky-500"
-            placeholder="Charger Master"
-            maxLength={20}
-          />
+          <label htmlFor="playerName" className="block text-sky-300 text-sm font-bold mb-2">お名前を入力してください:</label>
+          <div className="flex items-center bg-slate-700 rounded-md shadow">
+            <span className="pl-3 pr-2 text-slate-400">
+              <UserIcon className="w-5 h-5" />
+            </span>
+            <input 
+              type="text"
+              id="playerName"
+              value={playerName}
+              onChange={handlePlayerNameChange}
+              placeholder="例: チャージマスター"
+              className="w-full p-3 bg-transparent text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-r-md"
+              maxLength={20}
+            />
+          </div>
         </div>
-        
         <button
           onClick={startGame}
           disabled={playerName.trim() === ""}
-          className={`w-full font-bold py-3 px-6 rounded-lg text-xl shadow-lg transition duration-150 ease-in-out transform hover:scale-105
-                      ${playerName.trim() === "" ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-500 hover:bg-green-400 text-white'}`}
-          aria-label="Start Game"
-          aria-disabled={playerName.trim() === ""}
+          className={`w-full text-xl sm:text-2xl font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-150 ease-in-out
+            ${playerName.trim() === "" 
+              ? 'bg-slate-600 text-slate-400 cursor-not-allowed' 
+              : 'bg-green-600 hover:bg-green-500 text-white transform hover:scale-105'}`}
+          aria-label={playerName.trim() === "" ? "ゲームを開始するにはお名前を入力してください" : "ゲームを開始"}
         >
-          Start Game
+          ゲーム開始
         </button>
-        
         <div className="mt-8 pt-6 border-t border-slate-700">
-            <h3 className="text-xl font-semibold text-sky-400 mb-3">High Scores</h3>
-            {highScores.length > 0 ? (
-              <ol className="list-decimal list-inside text-slate-300 space-y-1">
-                {highScores.map((entry, index) => (
-                  <li key={index} className="text-lg">
-                    <span className="font-medium text-amber-400">{entry.name}</span>: {entry.score.toFixed(1)} kWh
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="text-slate-400 italic">No high scores yet. Be the first!</p>
+            <h3 className="text-2xl font-semibold mb-4 text-sky-400">ハイスコア</h3>
+            {highScoresLoading && <p className="text-slate-300">スコアを読み込み中...</p>}
+            {highScoresError && <p className="text-red-400">{highScoresError}</p>}
+            {!highScoresLoading && !highScoresError && highScores.length === 0 && <p className="text-slate-400">まだハイスコアはありません。</p>}
+            {!highScoresLoading && !highScoresError && highScores.length > 0 && (
+                <ul className="space-y-2 text-left">
+                    {highScores.map((entry, index) => (
+                        <li key={index} className="flex justify-between items-center p-2 bg-slate-700 rounded-md">
+                            <span className="text-slate-300 font-medium">{index + 1}. {entry.name}</span>
+                            <span className="text-sky-300 font-bold">{entry.score.toFixed(1)} kWh</span>
+                        </li>
+                    ))}
+                </ul>
             )}
         </div>
-
       </Modal>
 
-      <Modal isOpen={gameState === GameState.GameOver} title="Game Over!">
-        <p className="text-slate-200 mb-2 text-2xl">Well done, <span className="font-bold text-sky-400">{playerNameRef.current || "Player"}</span>!</p>
-        <p className="text-slate-200 mb-4 text-2xl">Final Score: <span className="font-bold text-amber-400">{scoreRef.current.toFixed(1)} kWh</span></p>
-        <p className="text-slate-300 mb-8 text-lg">Great job managing the chargers!</p>
+      <Modal isOpen={gameState === GameState.GameOver} title="ゲームオーバー">
+        <p className="text-slate-300 mb-6 text-xl">{message}</p>
+        <div className="mb-6 pt-6 border-t border-slate-700">
+            <h3 className="text-2xl font-semibold mb-4 text-sky-400">ハイスコアランキング</h3>
+            {highScoresLoading && <p className="text-slate-300">ランキングを読み込み中...</p>}
+            {highScoresError && <p className="text-red-400">{highScoresError}</p>}
+            {!highScoresLoading && !highScoresError && highScores.length === 0 && <p className="text-slate-400">まだランキングはありません。</p>}
+            {!highScoresLoading && !highScoresError && highScores.length > 0 && (
+                <ul className="space-y-2 text-left">
+                    {highScores.map((entry, index) => (
+                         <li key={index} className={`flex justify-between items-center p-3 rounded-md ${entry.name === (playerNameRef.current || "名無し") && entry.score === scoreRef.current ? 'bg-sky-600 ring-2 ring-sky-400' : 'bg-slate-700'}`}>
+                            <span className="text-slate-200 font-medium text-lg">{index + 1}. {entry.name}</span>
+                            <span className="text-amber-400 font-bold text-lg">{entry.score.toFixed(1)} kWh</span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
         <button
-          onClick={() => setGameState(GameState.Idle)}
-          className="w-full bg-green-500 hover:bg-green-400 text-white font-bold py-3 px-6 rounded-lg text-xl shadow-lg transition duration-150 ease-in-out transform hover:scale-105"
-          aria-label="Play Again - Return to Title"
+          onClick={() => {
+            setGameState(GameState.Idle);
+            // Player name persists. High scores will be re-fetched or already up-to-date.
+            fetchHighScores(); // Re-fetch scores when returning to Idle.
+          }}
+          className="w-full text-xl sm:text-2xl font-bold py-3 px-6 bg-sky-600 hover:bg-sky-500 text-white rounded-lg shadow-lg transition-all duration-150 ease-in-out transform hover:scale-105"
+          aria-label="タイトル画面に戻る"
         >
-          Play Again
+          タイトルに戻る
         </button>
       </Modal>
 
-      {(gameState !== GameState.Idle && gameState !== GameState.GameOver) && (
-        <div className="w-full max-w-2xl mx-auto">
-          <header className="mb-4 sm:mb-6 text-center">
-            <h1 className="text-4xl sm:text-5xl font-bold text-sky-400 tracking-tight">EV Charger-san</h1>
-          </header>
-
-          <main className="space-y-4 sm:space-y-6">
+      {(gameState === GameState.Playing || gameState === GameState.Bonus || gameState === GameState.PenaltyCoolDown) && (
+        <div className="w-full max-w-3xl bg-slate-800 text-white p-4 sm:p-6 rounded-xl shadow-2xl">
+          <div className="mb-4 sm:mb-6">
             <GameInfoDisplay 
               playerName={playerName}
               score={score} 
               timeLeft={timeLeft} 
-              bonusTimeActive={bonusTimeActive || isRapidCharging}
+              bonusTimeActive={bonusTimeActive} 
               consecutiveCharges={consecutiveSuccessfulCharges}
               chargesForBonus={CONSECUTIVE_CHARGES_FOR_BONUS}
             />
+          </div>
+          
+          <div className="mb-4 sm:mb-6">
             <EVDisplay ev={currentEV} />
-            
-            {facilityDemandForecast.length > 0 && (
-              <DemandForecastGraph 
-                forecastData={facilityDemandForecast}
-                currentTimeIndex={currentDemandForecastIndex}
-                currentChargerOutput={effectiveEVChargeRate} 
-                maxGraphValue={maxGraphYValue} 
-                contractPower={CONTRACT_POWER}
-                width={500} 
-                height={120}
-              />
-            )}
+          </div>
+
+          <div className="mb-4 sm:mb-6">
+            <DemandForecastGraph 
+              forecastData={facilityDemandForecast}
+              currentTimeIndex={currentDemandForecastIndex}
+              currentChargerOutput={effectiveEVChargeRate}
+              maxGraphValue={maxGraphYValue}
+              contractPower={CONTRACT_POWER}
+              height={120}
+            />
+          </div>
+
+          <div className="mb-4 sm:mb-6">
             <FacilityStatusDisplay 
-              facilityDemand={facilityDemand} 
-              effectiveEVChargeRate={effectiveEVChargeRate} 
-              isPenaltyActive={gameState === GameState.PenaltyCoolDown} 
+              facilityDemand={facilityDemand}
+              effectiveEVChargeRate={effectiveEVChargeRate}
+              isPenaltyActive={gameState === GameState.PenaltyCoolDown || penaltyTimeLeft > 0}
               isBonusActive={bonusTimeActive}
               isRapidCharging={isRapidCharging}
             />
+          </div>
 
-            <div className="mt-2 sm:mt-4 p-3 bg-slate-700 rounded-lg shadow-md text-center min-h-[3em] flex items-center justify-center">
-              <p className="text-sm sm:text-base italic text-slate-300">{message}</p>
-            </div>
+          <div 
+            className={`p-2 sm:p-3 rounded-md mb-4 text-center font-medium transition-colors duration-300
+              ${gameState === GameState.PenaltyCoolDown ? 'bg-red-500 text-white' : 
+              (bonusTimeActive && !isRapidCharging ? 'bg-yellow-500 text-yellow-900' : 
+              (isRapidCharging ? 'bg-purple-500 text-white' :
+              'bg-slate-700 text-slate-300'))}`}
+            role="alert"
+            aria-live="polite"
+          >
+            {message}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <button
+              onClick={handleNormalChargeToggle}
+              disabled={isRapidCharging || gameState === GameState.PenaltyCoolDown}
+              className={`w-full text-lg sm:text-xl font-semibold py-3 sm:py-4 px-4 rounded-lg shadow-md transition-all duration-150 ease-in-out flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800
+                ${mainChargeButtonBgColor()}
+                ${!isRapidCharging && gameState !== GameState.PenaltyCoolDown ? 'hover:opacity-90 transform hover:scale-105' : ''}
+                ${bonusTimeActive && !isRapidCharging ? 'text-yellow-900 focus:ring-yellow-300' : 'text-white focus:ring-sky-400'}
+              `}
+              aria-label={mainButtonAriaLabel()}
+              aria-pressed={isCharging && !isRapidCharging}
+            >
+              <ZapIcon className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
+              {mainButtonText()}
+            </button>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-              <button
-                onClick={handleNormalChargeToggle}
-                disabled={gameState === GameState.PenaltyCoolDown || isRapidCharging} 
-                className={`w-full py-4 sm:py-5 px-6 rounded-lg font-bold text-xl sm:text-2xl shadow-xl transition-all duration-150 ease-in-out focus:outline-none focus:ring-4 focus:ring-opacity-50 select-none 
-                            ${mainChargeButtonBgColor()} 
-                            ${isRapidCharging ? 'text-slate-400' : (bonusTimeActive ? 'text-yellow-900' : 'text-white')}
-                            ${(gameState === GameState.PenaltyCoolDown || isRapidCharging) ? 'opacity-50' : 'hover:scale-105'}`} 
-                aria-pressed={isCharging && !isRapidCharging}
-                aria-label={mainButtonAriaLabel()}
-              >
-                <span className="flex items-center justify-center">
-                  <ZapIcon className={`w-7 h-7 mr-2 ${isCharging && !isRapidCharging && effectiveEVChargeRate > 0 ? (bonusTimeActive ? 'animate-bounce' : 'animate-pulse') : ''}`}/>
-                  {mainButtonText()}
-                </span>
-              </button>
-              
-              <button
-                onClick={handleRapidChargeButtonClick}
-                disabled={isRapidChargeButtonDisabled()}
-                className={`w-full py-4 sm:py-5 px-6 rounded-lg font-bold text-xl sm:text-2xl shadow-xl transition-all duration-150 ease-in-out focus:outline-none focus:ring-4 focus:ring-opacity-50 select-none
-                            ${isRapidChargeButtonDisabled() ? 'bg-slate-600 text-slate-400 cursor-not-allowed opacity-50' : 
-                            (isRapidCharging ? 'bg-purple-500 text-purple-50 animate-pulse hover:bg-purple-400' : 'bg-purple-600 hover:bg-purple-500 text-white')}`}
-                aria-pressed={isRapidCharging}
-                aria-label={isRapidCharging ? "Stop rapid charge" : (rapidChargeTimeLeft > 0 ? `Start or resume rapid charge, ${rapidChargeTimeLeft.toFixed(0)} seconds remaining` : "Rapid charge used")}
-              >
-                 <span className="flex items-center justify-center">
-                   <ZapIcon className={`w-7 h-7 mr-2 ${isRapidCharging ? 'animate-ping' : ''}`}/>
-                    {rapidChargeButtonText()}
-                 </span>
-              </button>
-            </div>
-          </main>
+            <button
+              onClick={handleRapidChargeButtonClick}
+              disabled={isRapidChargeButtonDisabled()}
+              className={`w-full text-lg sm:text-xl font-semibold py-3 sm:py-4 px-4 rounded-lg shadow-md transition-all duration-150 ease-in-out flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800
+                ${isRapidCharging ? 'bg-purple-500 text-white hover:bg-purple-400 transform hover:scale-105 focus:ring-purple-300' : 
+                 (isRapidChargeButtonDisabled() ? 'bg-slate-600 text-slate-400 cursor-not-allowed focus:ring-slate-500' : 'bg-teal-600 text-white hover:bg-teal-500 transform hover:scale-105 focus:ring-teal-400')}
+              `}
+              aria-label={isRapidCharging ? `急速充電を停止 (残り ${rapidChargeTimeLeft.toFixed(0)}秒)` : (isRapidChargeButtonDisabled() ? "急速充電は利用できません" : `急速充電を開始 (${RAPID_CHARGER_OUTPUT}kW、残り${rapidChargeTimeLeft.toFixed(0)}秒)`)}
+              aria-pressed={isRapidCharging}
+            >
+              <ZapIcon className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
+              {rapidChargeButtonText()}
+            </button>
+          </div>
         </div>
       )}
     </div>

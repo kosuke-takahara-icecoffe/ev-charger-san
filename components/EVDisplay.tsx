@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { EVInstance } from '../types';
 import BatteryIcon from './icons/BatteryIcon';
@@ -19,7 +20,7 @@ const EVDisplay: React.FC<EVDisplayProps> = ({ ev }) => {
     return (
       <div className="h-56 bg-slate-700 rounded-lg flex flex-col items-center justify-center text-slate-400 shadow-lg p-4">
         <CarIcon className="w-16 h-16 text-slate-500 mb-2" />
-        Waiting for EV...
+        EV待機中...
       </div>
     );
   }
@@ -45,7 +46,7 @@ const EVDisplay: React.FC<EVDisplayProps> = ({ ev }) => {
         <div 
           className={`rounded flex items-center justify-center shadow-inner p-1 ${ev.textColor === 'text-white' || ev.textColor === 'text-green-50' || ev.textColor === 'text-blue-50' || ev.textColor === 'text-indigo-50' || ev.textColor === 'text-red-50' ? 'bg-black/20' : 'bg-white/30'}`}
           style={{ width: `${evGraphicWidth}px`, height: `${evGraphicHeight}px` }}
-          aria-label={`Visual representation of ${ev.name}`}
+          aria-label={`${ev.name}の視覚的表現`}
         >
             <CarIcon className={`${ev.textColor}`} style={{width: `${evGraphicWidth * 0.75}px`, height: `${evGraphicHeight * 0.75}px` }} />
         </div>
@@ -53,9 +54,9 @@ const EVDisplay: React.FC<EVDisplayProps> = ({ ev }) => {
       <div className={`flex items-center justify-between mb-2 text-sm sm:text-base ${ev.textColor}`}>
         <div className="flex items-center">
           <BatteryIcon className="w-5 h-5 mr-2" />
-          <span>Capacity: {ev.capacity.toFixed(0)} kWh</span>
+          <span>容量: {ev.capacity.toFixed(0)} kWh</span>
         </div>
-        <span>Charge: {ev.currentCharge.toFixed(1)} kWh</span>
+        <span>充電量: {ev.currentCharge.toFixed(1)} kWh</span>
       </div>
       <div className="w-full bg-slate-300 bg-opacity-50 rounded-full h-6 sm:h-8 shadow-inner">
         <div

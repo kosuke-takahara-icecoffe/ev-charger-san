@@ -1,3 +1,4 @@
+
 import React from 'react';
 import FactoryIcon from './icons/FactoryIcon';
 import ZapIcon from './icons/ZapIcon';
@@ -36,11 +37,11 @@ const FacilityStatusDisplay: React.FC<FacilityStatusDisplayProps> = ({ facilityD
     <div className="grid grid-cols-2 gap-3 sm:gap-4 text-lg sm:text-xl my-4">
       <div className="bg-slate-700 p-3 sm:p-4 rounded-lg shadow-md flex items-center justify-center sm:justify-start">
         <FactoryIcon className={`w-6 h-6 sm:w-7 sm:h-7 mr-2 ${demandColor}`} />
-        <span className="font-semibold">Demand: <span className={demandColor}>{facilityDemand.toFixed(1)} kW</span></span>
+        <span className="font-semibold">需要: <span className={demandColor}>{facilityDemand.toFixed(1)} kW</span></span>
       </div>
       <div className="bg-slate-700 p-3 sm:p-4 rounded-lg shadow-md flex items-center justify-center sm:justify-start">
         <ZapIcon className={`w-6 h-6 sm:w-7 sm:h-7 mr-2 ${outputColor}`} />
-        <span className="font-semibold">Charger: <span className={outputColor}>{effectiveEVChargeRate.toFixed(1)} kW</span></span>
+        <span className="font-semibold">充電器: <span className={outputColor}>{effectiveEVChargeRate.toFixed(1)} kW</span></span>
       </div>
     </div>
   );
