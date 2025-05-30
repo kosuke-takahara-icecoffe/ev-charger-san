@@ -3,8 +3,8 @@ import type { Database } from './types_db'; // types_db.ts は後ほどSupabase 
 
 // SupabaseプロジェクトのURLとAnonキーを環境変数から取得
 // これらの変数はビルド環境または実行環境で設定されている必要があります。
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error(
