@@ -1,7 +1,7 @@
 import { EVType } from './types';
 
 export const INITIAL_GAME_DURATION = 60; // seconds
-export const BONUS_DURATION = 15; // seconds
+export const BONUS_DURATION = 5; // seconds (変更: 15秒から5秒へ)
 export const PENALTY_COOLDOWN_DURATION = 5; // seconds
 export const FACILITY_DEMAND_UPDATE_INTERVAL = 1000; // ms - Changed from 5000 to 1000 for 1-second updates
 
@@ -14,7 +14,8 @@ export const EV_TYPES: EVType[] = [
 ];
 
 export const NORMAL_CHARGER_OUTPUT_RANGE = { min: 3, max: 6 }; // kW
-export const BONUS_CHARGER_OUTPUT_RANGE = { min: 50, max: 450 }; // kW
+// export const BONUS_CHARGER_OUTPUT_RANGE = { min: 50, max: 450 }; // kW (削除)
+export const FIXED_BONUS_CHARGER_OUTPUT = 300; // kW (新規追加)
 
 // Facility Demand and Contract Power
 export const CONTRACT_POWER = 500; // kW
@@ -23,7 +24,7 @@ export const FACILITY_DEMAND_RANGE = { min: 0, max: 500 }; // kW
 
 export const GAME_TICK_INTERVAL = 100; // ms, for charging logic updates
 export const KWH_PER_TICK_FACTOR = GAME_TICK_INTERVAL / 1000;
-export const CONSECUTIVE_CHARGES_FOR_BONUS = 3;
+export const CONSECUTIVE_CHARGES_FOR_BONUS = 5; // (変更: 3回から5回へ)
 
 export const RAPID_CHARGER_OUTPUT = 100; // kW
 export const RAPID_CHARGE_DURATION = 20; // seconds (変更: 10秒から20秒へ)

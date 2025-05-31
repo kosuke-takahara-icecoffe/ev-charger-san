@@ -8,7 +8,7 @@ import {
   FACILITY_DEMAND_UPDATE_INTERVAL,
   EV_TYPES,
   NORMAL_CHARGER_OUTPUT_RANGE,
-  BONUS_CHARGER_OUTPUT_RANGE,
+  FIXED_BONUS_CHARGER_OUTPUT,
   FACILITY_DEMAND_RANGE,
   GAME_TICK_INTERVAL,
   KWH_PER_TICK_FACTOR,
@@ -27,7 +27,7 @@ import ZapIcon from './components/icons/ZapIcon';
 import UserIcon from './components/icons/UserIcon';
 import DemandForecastGraph from './components/DemandForecastGraph';
 import { useSound } from './components/hooks/useSound';
-import { supabase } from './supabaseClient'; // Supabaseクライアントをインポート
+import { supabase } from './supabaseClient'; 
 
 const getRandomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getRandomFloat = (min: number, max: number) => Math.random() * (max - min) + min;
@@ -63,6 +63,12 @@ export function App(): JSX.Element {
   const [highScoresLoading, setHighScoresLoading] = useState<boolean>(true);
   const [highScoresError, setHighScoresError] = useState<string | null>(null);
 
+  // Screen effects state
+  const [screenFlashColor, setScreenFlashColor] = useState<string | null>(null);
+  const [shakeScreen, setShakeScreen] = useState<boolean>(false);
+  const [showResultAnnouncement, setShowResultAnnouncement] = useState<boolean>(false);
+  const [isGameOverTransition, setIsGameOverTransition] = useState<boolean>(false);
+
 
   const gameTickIntervalRef = useRef<number | null>(null);
   const mainTimerIntervalRef = useRef<number | null>(null);
@@ -78,6 +84,7 @@ export function App(): JSX.Element {
   const facilityDemandRef = useRef(facilityDemand);
   const rapidChargeTimeLeftRef = useRef(rapidChargeTimeLeft);
   const playerNameRef = useRef(playerName);
+  const isSavingScoreRef = useRef(false);
 
   const { play: playStartSound } = useSound('./sounds/game_start.mp3');
   const { play: playChargeNormalLoopSound, stop: stopChargeNormalLoopSound } = useSound('./sounds/charging_normal_loop.mp3');
@@ -103,9 +110,18 @@ export function App(): JSX.Element {
   useEffect(() => { rapidChargeTimeLeftRef.current = rapidChargeTimeLeft; }, [rapidChargeTimeLeft]);
   useEffect(() => { playerNameRef.current = playerName; }, [playerName]);
 
+  const triggerScreenFlash = (color: 'green' | 'red') => {
+    setScreenFlashColor(color);
+    setTimeout(() => setScreenFlashColor(null), 300); // Flash duration
+  };
+
+  const triggerShakeScreen = () => {
+    setShakeScreen(true);
+    setTimeout(() => setShakeScreen(false), 300); // Shake duration (must match animation iterations * duration)
+  };
+
   const fetchHighScores = useCallback(async () => {
     if (!supabase) {
-      // This message is shown if supabase client failed to initialize (likely missing env vars)
       setHighScoresError("ランキング機能は現在利用できません。クライアント設定を確認してください。");
       setHighScoresLoading(false);
       return;
@@ -121,7 +137,7 @@ export function App(): JSX.Element {
 
       if (error) {
         console.error(`ハイスコアの読み込みエラー (ステータス: ${status}):`, error);
-        throw error; // Rethrow to be caught by the catch block
+        throw error; 
       }
       setHighScores(data || []);
     } catch (err: any) {
@@ -135,7 +151,7 @@ export function App(): JSX.Element {
     } finally {
       setHighScoresLoading(false);
     }
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     fetchHighScores();
@@ -179,7 +195,7 @@ export function App(): JSX.Element {
       targetChargerOutput = RAPID_CHARGER_OUTPUT;
     } else if (isCharging) { 
       if (bonusTimeActiveRef.current) {
-        targetChargerOutput = currentBonusOutput;
+        targetChargerOutput = currentBonusOutput; 
       } else {
         targetChargerOutput = baseNormalChargerOutput;
       }
@@ -191,48 +207,63 @@ export function App(): JSX.Element {
 
 
   const endGame = useCallback(async () => {
-    if (gameStateRef.current === GameState.GameOver) {
-      console.warn("endGame called but game is already over. Skipping duplicate execution.");
+    if (gameStateRef.current === GameState.GameOver || isSavingScoreRef.current || showResultAnnouncement) {
+      console.warn("endGame called but game is already over, score saving is in progress, or result announcement is active. Skipping duplicate execution.");
       return;
     }
-    setGameState(GameState.GameOver);
+    
+    isSavingScoreRef.current = true;
+    
+    // Start game over transition
     setIsCharging(false);
     setIsRapidCharging(false); 
-    
-    const finalScore = scoreRef.current;
-    setMessage(`ゲームオーバー、${playerNameRef.current || "プレイヤー"}！最終スコア: ${finalScore.toFixed(1)} kWh`);
-    
-    if (supabase) {
-      try {
-        const { error } = await supabase
-          .from('high_scores')
-          .insert([{ name: playerNameRef.current || "名無し", score: finalScore }]);
-        
-        if (error) {
-          console.error("スコアの保存に失敗しました (Supabaseエラー):", error);
-          setHighScoresError(`スコアの保存に失敗しました: ${error.message}`);
-        } else {
-          await fetchHighScores();
-        }
-      } catch (err: any) {
-        console.error("スコア保存中に予期せぬエラー:", err);
-        setHighScoresError(`スコア保存中にエラーが発生しました: ${err.message || '不明なエラー'}`);
-      }
-    } else {
-       console.warn("Supabaseクライアントが利用できないため、スコアは保存されません。");
-       setHighScoresError("ランキング機能は現在利用できません。スコアは保存されませんでした。");
-        setHighScores(prevHighScores => {
-          const newScoreEntry: ScoreEntry = { name: playerNameRef.current || "名無し", score: finalScore };
-          const updatedScores = [...prevHighScores, newScoreEntry];
-          updatedScores.sort((a, b) => b.score - a.score);
-          return updatedScores.slice(0, MAX_HIGH_SCORES);
-        });
-    }
-
     clearAllIntervals();
-    playGameOverSound();
     stopAllLoopingSoundsAndPlayStop(false);
-  }, [clearAllIntervals, playGameOverSound, stopAllLoopingSoundsAndPlayStop, fetchHighScores]);
+
+    setIsGameOverTransition(true);
+    setShowResultAnnouncement(true);
+    setMessage(`ゲーム終了！`); // Clear previous messages
+    
+    setTimeout(async () => {
+        setShowResultAnnouncement(false);
+        // setIsGameOverTransition(false); // Keep the backdrop for the modal or let modal handle it
+        
+        setGameState(GameState.GameOver);
+        const finalScore = scoreRef.current;
+        setMessage(`ゲームオーバー、${playerNameRef.current || "プレイヤー"}！最終スコア: ${finalScore.toFixed(1)} kWh`);
+        playGameOverSound();
+
+        try {
+          if (supabase) {
+            const { error } = await supabase
+              .from('high_scores')
+              .insert([{ name: playerNameRef.current || "名無し", score: finalScore }]);
+            
+            if (error) {
+              console.error("スコアの保存に失敗しました (Supabaseエラー):", error);
+              setHighScoresError(`スコアの保存に失敗しました: ${error.message}`);
+            } else {
+              await fetchHighScores(); 
+            }
+          } else {
+             console.warn("Supabaseクライアントが利用できないため、スコアは保存されません。");
+             setHighScoresError("ランキング機能は現在利用できません。スコアは保存されませんでした。");
+              setHighScores(prevHighScores => {
+                const newScoreEntry: ScoreEntry = { name: playerNameRef.current || "名無し", score: finalScore };
+                const updatedScores = [...prevHighScores, newScoreEntry];
+                updatedScores.sort((a, b) => b.score - a.score);
+                return updatedScores.slice(0, MAX_HIGH_SCORES);
+              });
+          }
+        } catch (err: any) { 
+          console.error("スコア保存処理中に予期せぬエラー:", err);
+          setHighScoresError(`スコア保存処理中にエラーが発生しました: ${err.message || '不明なエラー'}`);
+        } finally {
+          isSavingScoreRef.current = false; 
+        }
+    }, 3000); // 3 second delay for "結果発表！"
+
+  }, [clearAllIntervals, playGameOverSound, stopAllLoopingSoundsAndPlayStop, fetchHighScores, supabase, showResultAnnouncement]);
 
   const generateDemandForecast = useCallback(() => {
     const forecast: number[] = new Array(DEMAND_FORECAST_POINTS).fill(0);
@@ -262,6 +293,7 @@ export function App(): JSX.Element {
     generateDemandForecast();
     spawnNewEV();
     setMessage("「充電開始」または「急速充電開始」をクリックしてください。");
+    setIsGameOverTransition(false); // Ensure this is reset
   }, [spawnNewEV, generateDemandForecast]);
 
   const startGame = useCallback(() => {
@@ -272,9 +304,7 @@ export function App(): JSX.Element {
     playStartSound();
     resetGame();
     setGameState(GameState.Playing);
-    // Reset high score error from previous game over screen if any
     setHighScoresError(null); 
-    // Fetch high scores again in case they were updated by another player or if there was an error previously
     fetchHighScores();
   }, [resetGame, playStartSound, playerName, fetchHighScores]);
   
@@ -392,20 +422,22 @@ export function App(): JSX.Element {
             intendedChargerOutput = RAPID_CHARGER_OUTPUT;
           } else if (isCharging) { 
             if (bonusTimeActiveRef.current) {
-              intendedChargerOutput = currentBonusOutput;
+              intendedChargerOutput = currentBonusOutput; 
             } else {
               intendedChargerOutput = baseNormalChargerOutput;
             }
           }
           
-          if (facilityDemandRef.current + intendedChargerOutput > CONTRACT_POWER) { 
+          if (!bonusTimeActiveRef.current && (facilityDemandRef.current + intendedChargerOutput > CONTRACT_POWER)) { 
             stopAllLoopingSoundsAndPlayStop(); 
             setGameState(GameState.PenaltyCoolDown);
             setPenaltyTimeLeft(PENALTY_COOLDOWN_DURATION);
             setIsCharging(false); 
             if(isRapidChargingRef.current) setIsRapidCharging(false); 
-            setConsecutiveSuccessfulCharges(0);
+            setConsecutiveSuccessfulCharges(0); 
             setMessage(`需要超過！施設過負荷。充電停止（${PENALTY_COOLDOWN_DURATION}秒）`);
+            triggerScreenFlash('red');
+            triggerShakeScreen();
             return;
           }
 
@@ -424,8 +456,8 @@ export function App(): JSX.Element {
 
             const newCharge = prevEV.currentCharge + chargeAmount;
             if (newCharge >= prevEV.capacity) {
-              const evCompletedDuringRapid = isRapidChargingRef.current;
-              const rapidChargeContinuesForNextEV = evCompletedDuringRapid && rapidChargeTimeLeftRef.current > 0;
+              triggerScreenFlash('green'); // Success flash
+              const rapidChargeContinuesForNextEV = isRapidChargingRef.current && rapidChargeTimeLeftRef.current > 0;
 
               if (rapidChargeContinuesForNextEV) {
                 if(isCharging) setIsCharging(false); 
@@ -445,20 +477,19 @@ export function App(): JSX.Element {
               setConsecutiveSuccessfulCharges(prevSuccessCharges => {
                 const wasBonusActiveForThisEV = bonusTimeActiveRef.current; 
                 
-                const eligibleForNormalBonusIncrement = !wasBonusActiveForThisEV && !evCompletedDuringRapid;
-                const newCount = eligibleForNormalBonusIncrement ? prevSuccessCharges + 1 : prevSuccessCharges;
+                const eligibleForBonusIncrement = !wasBonusActiveForThisEV;
+                const newCount = eligibleForBonusIncrement ? prevSuccessCharges + 1 : prevSuccessCharges;
                 
-                if (newCount >= CONSECUTIVE_CHARGES_FOR_BONUS && !wasBonusActiveForThisEV && !evCompletedDuringRapid) {
+                if (newCount >= CONSECUTIVE_CHARGES_FOR_BONUS && !wasBonusActiveForThisEV) {
                   playBonusStartSound();
                   setBonusTimeActive(true);
-                  setBonusTimeRemaining(BONUS_DURATION);
-                  const newBonusOutputVal = getRandomFloat(BONUS_CHARGER_OUTPUT_RANGE.min, BONUS_CHARGER_OUTPUT_RANGE.max);
-                  setCurrentBonusOutput(newBonusOutputVal);
+                  setBonusTimeRemaining(BONUS_DURATION); 
+                  setCurrentBonusOutput(FIXED_BONUS_CHARGER_OUTPUT); 
                   
                   if (!isRapidChargingRef.current) { 
                     setGameState(GameState.Bonus);
                   }
-                  setTimeLeft(prevTime => prevTime + BONUS_DURATION); 
+                  // setTimeLeft(prevTime => prevTime + BONUS_DURATION); // Removed: Bonus time no longer adds to game time
                   setMessage("ボーナスタイム！強化充電作動中！");
                   spawnNewEV(); 
                   return 0; 
@@ -555,9 +586,6 @@ export function App(): JSX.Element {
       
       setMessage(`急速充電作動！残り${rapidChargeTimeLeftRef.current.toFixed(0)}秒です。`);
       playChargeRapidLoopSound(true); 
-      if (gameStateRef.current !== GameState.PenaltyCoolDown) {
-         setGameState(GameState.Bonus); 
-      }
     }
   };
   
@@ -610,9 +638,37 @@ export function App(): JSX.Element {
     setPlayerName(event.target.value);
   };
 
+  const getScreenFlashClass = () => {
+    if (!screenFlashColor) return 'opacity-0';
+    if (screenFlashColor === 'green') return 'bg-green-500/30 opacity-100';
+    if (screenFlashColor === 'red') return 'bg-red-500/30 opacity-100';
+    return 'opacity-0';
+  };
+
 
   return (
-    <div className="flex flex-col items-center min-h-screen p-4 selection:bg-sky-500 selection:text-sky-900 overflow-y-auto">
+    <div className={`relative flex flex-col items-center min-h-screen p-4 selection:bg-sky-500 selection:text-sky-900 overflow-y-auto ${shakeScreen ? 'animate-shake' : ''}`}>
+      {/* Screen Flash Overlay */}
+      <div 
+        className={`fixed inset-0 z-[1000] pointer-events-none transition-opacity duration-100 ${getScreenFlashClass()}`}
+        aria-hidden="true"
+      />
+
+      {/* Game Over Transition Overlay and Message */}
+      {isGameOverTransition && (
+        <div 
+          className="fixed inset-0 z-[1001] bg-black/70 backdrop-blur-sm flex items-center justify-center transition-opacity duration-300"
+          aria-hidden="true"
+        >
+          {showResultAnnouncement && (
+            <h2 className="text-6xl sm:text-7xl font-extrabold text-white animate-pulse">
+              結果発表！
+            </h2>
+          )}
+        </div>
+      )}
+
+
       <Modal isOpen={gameState === GameState.Idle} title="EVチャージャーさん">
         <p className="text-slate-300 mb-4 text-lg">刻一刻と変化するデマンド値に注意しながら、500kWの電力契約を超えないようにEVに充電しましょう。ランキング1位を目指せ！</p>
         
@@ -662,7 +718,11 @@ export function App(): JSX.Element {
         </div>
       </Modal>
 
-      <Modal isOpen={gameState === GameState.GameOver} title="ゲームオーバー">
+      <Modal 
+        isOpen={gameState === GameState.GameOver && !showResultAnnouncement} 
+        title="ゲームオーバー"
+        className="z-[1002]"
+      >
         <p className="text-slate-300 mb-6 text-xl">{message}</p>
         <div className="mb-6 pt-6 border-t border-slate-700">
             <h3 className="text-2xl font-semibold mb-4 text-sky-400">ハイスコアランキング</h3>
@@ -684,6 +744,7 @@ export function App(): JSX.Element {
           onClick={() => {
             setGameState(GameState.Idle);
             fetchHighScores(); 
+            setIsGameOverTransition(false); // Reset transition state
           }}
           className="w-full text-xl sm:text-2xl font-bold py-3 px-6 bg-sky-600 hover:bg-sky-500 text-white rounded-lg shadow-lg transition-all duration-150 ease-in-out transform hover:scale-105"
           aria-label="タイトル画面に戻る"
@@ -693,7 +754,7 @@ export function App(): JSX.Element {
       </Modal>
 
       {(gameState === GameState.Playing || gameState === GameState.Bonus || gameState === GameState.PenaltyCoolDown) && (
-        <div className="w-full max-w-3xl bg-slate-800 text-white p-4 sm:p-6 rounded-xl shadow-2xl my-auto"> {/* Added my-auto for vertical centering if content is smaller than screen */}
+        <div className="w-full max-w-3xl bg-slate-800 text-white p-4 sm:p-6 rounded-xl shadow-2xl my-auto"> 
           <div className="mb-4 sm:mb-6">
             <GameInfoDisplay 
               playerName={playerName}
