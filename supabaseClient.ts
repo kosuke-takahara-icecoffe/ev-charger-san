@@ -1,33 +1,41 @@
+
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types_db'; // types_db.ts は後ほどSupabase CLIで生成される型ファイル（今回は手動で定義）
 
-// SupabaseプロジェクトのURLとAnonキーを環境変数から取得
-// これらの変数はビルド環境または実行環境で設定されている必要があります。
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+let supabaseUrl: string | undefined = undefined;
+let supabaseAnonKey: string | undefined = undefined;
+let envLoadError = false;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (typeof import.meta !== 'undefined' && typeof import.meta.env !== 'undefined') {
+  supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+} else {
+  envLoadError = true;
   console.error(
-    'Supabase URLまたはAnon Keyが設定されていません。' +
+    '`import.meta.env` が未定義です。このアプリケーションは、Vite のような環境で実行され、' +
+    '`import.meta.env` に VITE_SUPABASE_URL と VITE_SUPABASE_ANON_KEY が設定されていることを想定しています。'
+  );
+}
+
+if (!envLoadError && (!supabaseUrl || !supabaseAnonKey)) {
+  console.error(
+    'Supabase URL (VITE_SUPABASE_URL) または Anon Key (VITE_SUPABASE_ANON_KEY) が `import.meta.env` に設定されていません。' +
     '.envファイルまたは環境変数を確認してください。'
   );
-  // アプリケーションの動作を完全に停止させるか、機能制限モードで動作させるかは要件によります。
-  // ここではエラーをログに出力し、クライアントは未初期化のまま（機能しない状態）とします。
+  // Mark as error so supabase client becomes null, even if import.meta.env was defined.
+  envLoadError = true; 
 }
 
 // Supabaseクライアントを初期化
 // Database型を指定することで、テーブル名やカラム名の型補完が効くようになります。
-export const supabase = supabaseUrl && supabaseAnonKey 
-  ? createClient<Database>(supabaseUrl, supabaseAnonKey) 
+export const supabase = supabaseUrl && supabaseAnonKey && !envLoadError
+  ? createClient<Database>(supabaseUrl, supabaseAnonKey)
   : null;
 
 // この時点では `supabase` が null になる可能性があります。
 // 呼び出し側で null チェックを行うか、
 // ここで初期化失敗時にエラーをthrowしてアプリケーションを停止させる等のハンドリングが必要です。
 // 今回は呼び出し側で null チェックを行う前提とします。
-// if (!supabase && supabaseUrl && supabaseAnonKey) { // supabaseUrlとKeyがあるのに初期化失敗した場合
-//   throw new Error('Supabase clientの初期化に失敗しました。');
-// }
 
 // 参考: Supabaseが自動生成する型ファイルがない場合の簡易的なDatabase型定義
 // 本来は `npx supabase gen types typescript --project-id <your-project-id> > types_db.ts` 等で生成します。

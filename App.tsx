@@ -191,6 +191,10 @@ export function App(): JSX.Element {
 
 
   const endGame = useCallback(async () => {
+    if (gameStateRef.current === GameState.GameOver) {
+      console.warn("endGame called but game is already over. Skipping duplicate execution.");
+      return;
+    }
     setGameState(GameState.GameOver);
     setIsCharging(false);
     setIsRapidCharging(false); 
@@ -608,9 +612,9 @@ export function App(): JSX.Element {
 
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4 selection:bg-sky-500 selection:text-sky-900">
+    <div className="flex flex-col items-center min-h-screen p-4 selection:bg-sky-500 selection:text-sky-900 overflow-y-auto">
       <Modal isOpen={gameState === GameState.Idle} title="EVチャージャーさん">
-        <p className="text-slate-300 mb-4 text-lg">EVを充電し、電力需要を管理し、ボーナスラウンドを目指しましょう！施設の電力需要に注意し、契約電力を超えないようにしてください。急速充電器は賢く使いましょう！</p>
+        <p className="text-slate-300 mb-4 text-lg">刻一刻と変化するデマンド値に注意しながら、500kWの電力契約を超えないようにEVに充電しましょう。ランキング1位を目指せ！</p>
         
         <div className="mb-6">
           <label htmlFor="playerName" className="block text-sky-300 text-sm font-bold mb-2">お名前を入力してください:</label>
@@ -689,7 +693,7 @@ export function App(): JSX.Element {
       </Modal>
 
       {(gameState === GameState.Playing || gameState === GameState.Bonus || gameState === GameState.PenaltyCoolDown) && (
-        <div className="w-full max-w-3xl bg-slate-800 text-white p-4 sm:p-6 rounded-xl shadow-2xl">
+        <div className="w-full max-w-3xl bg-slate-800 text-white p-4 sm:p-6 rounded-xl shadow-2xl my-auto"> {/* Added my-auto for vertical centering if content is smaller than screen */}
           <div className="mb-4 sm:mb-6">
             <GameInfoDisplay 
               playerName={playerName}
@@ -773,4 +777,3 @@ export function App(): JSX.Element {
     </div>
   );
 }
-    

@@ -38,4 +38,4 @@ export const EV_GFX_BASE_WIDTH = 50; // px for min capacity EV
 export const EV_GFX_MAX_WIDTH = 120; // px for max capacity EV
 export const EV_GFX_ASPECT_RATIO = 2; // width / height ratio for the EV graphic
 
-export const MAX_HIGH_SCORES = 5; // Max number of high scores to display
+export const MAX_HIGH_SCORES = 100; // Max number of high scores to display
